@@ -1,11 +1,30 @@
+// graphics imports
 use pixels::{Error, Pixels, SurfaceTexture};
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
+//file reading imports
+use std::fs::File;
+use std::io::{self, BufReader, BufRead};
+
+fn read_file_into_array() -> io::Result<Vec<String>> {//as of now i cba to parse binary stl. only ascii stl files.
+    let file_path = "model.stl"; //keep in same dir
+    let file = File::open(file_path)?;// open read only
+    let reader = BufReader::new(file);// buffer for efficiency
+
+    let mut lines = Vec::new();
+    for line in reader.lines() {
+        let line = line?; // Handle potential errors reading each line
+        //println!("{}", line);
+        lines.push(line);
+    }
+    Ok(lines)
+}
+
 fn main() {
-   
+    let model_arr = read_file_into_array().expect("Failed to read file");
 
     // declare matrices as nested vectors
     let matrix_a: Vec<Vec<i32>> = vec![
