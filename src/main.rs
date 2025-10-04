@@ -23,9 +23,39 @@ fn read_file_into_array() -> io::Result<Vec<String>> {//as of now i cba to parse
     Ok(lines)
 }
 
-fn main() {
-    let model_arr = read_file_into_array().expect("Failed to read file");
 
+
+fn main() {
+    let model_arr = read_file_into_array().expect("Failed to read model.stl file");
+    
+    // Parse vertices from STL file
+    let mut base_points: Vec<Vec<f64>> = Vec::new();
+    for line in &model_arr {
+        if line.trim().starts_with("vertex") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() == 4 {
+                let x: f64 = parts[1].parse().unwrap_or(0.0);
+                let y: f64 = parts[2].parse().unwrap_or(0.0);
+                let z: f64 = parts[3].parse().unwrap_or(0.0);
+                base_points.push(vec![x, y, z]);
+            }
+        }
+    }
+    
+    println!("Loaded {} vertices from model.stl", base_points.len());
+    
+    // Scale all points by 5x to make them bigger
+    fn scale_points(points: &mut Vec<Vec<f64>>, scalar: f64) {
+        for point in points {
+            for coordinate in point {
+                *coordinate *= scalar;
+            }
+        }
+    }
+    
+    scale_points(&mut base_points, 5.0);
+    println!("Scaled all points by 5x");
+    /* 
     // declare matrices as nested vectors
     let matrix_a: Vec<Vec<i32>> = vec![
         vec![1, 2, 3],
@@ -48,6 +78,7 @@ fn main() {
 
     print_matrix(&matrix_a, "matrix_a");
     print_matrix(&matrix_b, "matrix_b");
+    */ 
     // multiply em up
     fn multiply_matrices(a: &Vec<Vec<i32>>, b: &Vec<Vec<i32>>) -> Vec<Vec<i32>> {
         let n = a.len();
@@ -64,7 +95,7 @@ fn main() {
         result
     
     }
-    print_matrix(&multiply_matrices(&matrix_a, &matrix_b), "result");
+    //print_matrix(&multiply_matrices(&matrix_a, &matrix_b), "result");
 
     //check if two matricies are multiplyable (a columns must equal b rows)
     fn check_dimensional_equivalence(a: &Vec<Vec<i32>>, b: &Vec<Vec<i32>>) -> bool {
@@ -178,20 +209,9 @@ fn main() {
         Pixels::new(800, 800, surface_texture).unwrap()
     };
 
-    // coords for triangles
-    let base_points = vec![
-        vec![0.0, 0.0, 0.0],// Triangle 1 
-        vec![100.0, 0.0, 0.0],   
-        vec![0.0, 100.0, 0.0],   
-        
-        vec![100.0, 0.0, 0.0],// Triangle 2 
-        vec![0.0, 100.0, 0.0],    
-        vec![100.0, 100.0, 0.0]
-    ];
-
     let mut theta = 0.0;
 
-    // Helper function to apply 3D matrix multiplication
+    // apply 3D matrix multiplication
     fn matrix_multiply_3d(matrix: &Vec<Vec<f64>>, point: &Vec<f64>) -> Vec<f64> {
         vec![
             matrix[0][0] * point[0] + matrix[0][1] * point[1] + matrix[0][2] * point[2],
@@ -211,7 +231,7 @@ fn main() {
         let mut y = y0;
 
         loop {
-            // Draw pixel if within bounds
+            // draw pixel if within bounds
             if x >= 0 && x < width as i32 && y >= 0 && y < width as i32 {
                 let idx = (y as usize * width as usize + x as usize) * 4;
                 if idx + 3 < frame.len() {
@@ -252,7 +272,7 @@ fn main() {
                 *control_flow = ControlFlow::Exit;
             }
             Event::RedrawRequested(_) => {
-                // Clear to black 
+                // clear to black 
                 let frame = pixels.frame_mut();
                 for pixel in frame.chunks_exact_mut(4) {
                     pixel[0] = 0x00; // R
@@ -261,10 +281,10 @@ fn main() {
                     pixel[3] = 0xff; // A
                 }
 
-                // Update rotation angle
-                theta += 0.01; // Faster than Python version for visibility
+                // increment per frame
+                theta += 0.01;
 
-                // Transform and render points (like the Python version)
+                // Transform and render
                 let mut transformed_points = Vec::new();
                 
                 for point in &base_points {
@@ -280,22 +300,17 @@ fn main() {
                     transformed_points.push((screen_x, screen_y));
                 }
 
-                // Draw the two triangles (like in Python)
-                if transformed_points.len() >= 6 {
-                    draw_triangle(
-                        frame, 
-                        transformed_points[0], 
-                        transformed_points[1], 
-                        transformed_points[2], 
-                        800
-                    );
-                    draw_triangle(
-                        frame, 
-                        transformed_points[3], 
-                        transformed_points[4], 
-                        transformed_points[5], 
-                        800
-                    );
+                // Draw triangles from STL file (every 3 vertices form a triangle)
+                for i in (0..transformed_points.len()).step_by(3) {
+                    if i + 2 < transformed_points.len() {
+                        draw_triangle(
+                            frame, 
+                            transformed_points[i], 
+                            transformed_points[i + 1], 
+                            transformed_points[i + 2], 
+                            800
+                        );
+                    }
                 }
 
                 if let Err(err) = pixels.render() {
