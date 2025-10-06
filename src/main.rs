@@ -1,7 +1,7 @@
 // graphics imports
 use pixels::{Error, Pixels, SurfaceTexture};
 use winit::dpi::LogicalSize;
-use winit::event::{Event, WindowEvent};
+use winit::event::{Event, WindowEvent, DeviceEvent, ElementState, MouseButton};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
@@ -44,7 +44,7 @@ fn main() {
     
     println!("Loaded {} vertices from model.stl", base_points.len());
     
-    // Scale all points by 5x to make them bigger
+    // Scale all points by 5x (for visibility)
     fn scale_points(points: &mut Vec<Vec<f64>>, scalar: f64) {
         for point in points {
             for coordinate in point {
@@ -53,8 +53,8 @@ fn main() {
         }
     }
     
-    scale_points(&mut base_points, 5.0);
-    println!("Scaled all points by 5x");
+    scale_points(&mut base_points, 30.0);
+    println!("Scaled all points by 30x");
     /* 
     // declare matrices as nested vectors
     let matrix_a: Vec<Vec<i32>> = vec![
@@ -209,7 +209,19 @@ fn main() {
         Pixels::new(800, 800, surface_texture).unwrap()
     };
 
-    let mut theta = 0.0;
+    // Mouse-controlled panning and rotation
+    let mut mouse_x = 0.0;
+    let mut mouse_y = 0.0;
+    let mut offset_x = 0.0;  // Object's X position (for panning)
+    let mut offset_y = 0.0;  // Object's Y position (for panning)
+    let mut is_panning = false;   // Left-click drag for panning
+    let mut is_rotating = false;  // Right-click drag for rotation
+    let mut drag_start_x = 0.0;
+    let mut drag_start_y = 0.0;
+
+    // Rotation variables for 3D rotation
+    let mut rotation_x = 0.0;
+    let mut rotation_y = 0.0;
 
     // apply 3D matrix multiplication
     fn matrix_multiply_3d(matrix: &Vec<Vec<f64>>, point: &Vec<f64>) -> Vec<f64> {
@@ -267,10 +279,78 @@ fn main() {
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
+            
                 ..
             } => {
                 *control_flow = ControlFlow::Exit;
             }
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position, .. },
+                window_id,
+            } => {
+                mouse_x = position.x;
+                mouse_y = position.y;
+                
+                if is_panning {
+                    let delta_x = mouse_x - drag_start_x;
+                    let delta_y = mouse_y - drag_start_y;
+                    
+                    // Update position based on drag distance
+                    offset_x = delta_x;
+                    offset_y = delta_y;
+                    
+                    window.request_redraw();
+                } else if is_rotating {
+                    let delta_x = mouse_x - drag_start_x;
+                    let delta_y = mouse_y - drag_start_y;
+
+                    // Update rotation based  (scale down sensitivity like crazy)
+                    rotation_x += delta_y as f64 * 0.0001;
+                    rotation_y += delta_x as f64 * 0.0001;
+
+                    window.request_redraw();
+                }
+            }
+            Event::WindowEvent {
+                event: WindowEvent::MouseInput { state, button, .. },
+                ..
+            } => {
+                match state {
+                    ElementState::Pressed => { 
+                        println!("Mouse button {:?} was pressed!", button);                        
+                    
+                        if button == MouseButton::Left {
+                            // Start panning
+                            println!("Left mouse button pressed - starting pan");
+                            is_panning = true;
+                            drag_start_x = mouse_x;
+                            drag_start_y = mouse_y;
+                        }
+                        else if button == MouseButton::Right {
+                            // Start rotating
+                            println!("Right mouse button pressed - starting rotation");
+                            is_rotating = true;
+                            drag_start_x = mouse_x;
+                            drag_start_y = mouse_y;
+                        }
+                    }
+                    ElementState::Released => {
+                        println!("Mouse button {:?} was released!", button);
+                        
+                        if button == MouseButton::Left {
+                            //make the current offset permanent
+                            println!("Left mouse button released - stopping pan");
+                            is_panning = false;
+                        }
+                        else if button == MouseButton::Right {
+                            println!("Right mouse button released - stopping rotation");
+                            is_rotating = false;
+                        }
+                    }
+                    
+                }
+            }
+
             Event::RedrawRequested(_) => {
                 // clear to black 
                 let frame = pixels.frame_mut();
@@ -281,26 +361,34 @@ fn main() {
                     pixel[3] = 0xff; // A
                 }
 
-                // increment per frame
-                theta += 0.01;
-
-                // Transform and render
+                // render
                 let mut transformed_points = Vec::new();
                 
                 for point in &base_points {
-                    // Apply X-axis rotation
-                    let x_rotated = matrix_multiply_3d(&x_axis_rotation_matrix(theta), point);
-                    // Apply Z-axis rotation  
-                    let z_rotated = matrix_multiply_3d(&z_axis_rotation_matrix(theta), &x_rotated);
+                    // Apply rotation transformations
+                    let x = point[0];
+                    let y = point[1]; 
+                    let z = point[2];
                     
-                    // Offset to center screen (like adding 200 in Python)
-                    let screen_x = (z_rotated[0] + 400.0) as i32;
-                    let screen_y = (z_rotated[1] + 400.0) as i32;
+                    // Create rotation matrices
+                    let rot_x = x_axis_rotation_matrix(rotation_x);
+                    let rot_y = y_axis_rotation_matrix(rotation_y);
+                    
+                    // Apply X rotation first
+                    let point_vec = vec![x, y, z];
+                    let after_x_rot = matrix_multiply_3d(&rot_x, &point_vec);
+                    
+                    // Then Y rotation  
+                    let after_y_rot = matrix_multiply_3d(&rot_y, &after_x_rot);
+                    
+                    // Project to 2D and apply panning offset to screen position
+                    let screen_x = (after_y_rot[0] + 400.0 + offset_x) as i32;
+                    let screen_y = (after_y_rot[1] + 400.0 + offset_y) as i32;
                     
                     transformed_points.push((screen_x, screen_y));
                 }
 
-                // Draw triangles from STL file (every 3 vertices form a triangle)
+                // Draw triangles from STL file 
                 for i in (0..transformed_points.len()).step_by(3) {
                     if i + 2 < transformed_points.len() {
                         draw_triangle(
